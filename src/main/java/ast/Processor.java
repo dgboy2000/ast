@@ -13,8 +13,20 @@ import java.util.List;
  * Date: 6/6/14
  * Time: 6:44 PM
  * To change this template use File | Settings | File Templates.
+ *
+ * How to make a tree of the code? Each node is a node of the AST with type,
+ * identifier if applicable, and children.
+ *
+ * How to embed in a vector space?
+ * Want to share representations of the same tokens, and have the nodes represent
+ * the semantics of everything under them
+ *
+ * How to handle multiple children instead of 1? Could do the numenta thing and combine
+ *
+ * Split visiting and processing?
+ * Want to be able to visit in-order
  */
-public class Visitor extends JCTree.Visitor
+public class Processor extends JCTree.Visitor
 {
     private int indentLevel = 0;
     private List<String> nestedClasses = new ArrayList<String>();
@@ -82,14 +94,33 @@ public class Visitor extends JCTree.Visitor
     }
 
     @Override
+    public void visitBreak(JCTree.JCBreak jcBreak)
+    {
+        // TODO: label
+        print("break;");
+    }
+
+    @Override
     public void visitCase(JCTree.JCCase jcCase)
     {
-        print("CASE ");
-        visitTree(jcCase.getExpression());
+        print("\n");
+        if (jcCase.getExpression() == null)
+        {
+            print("default");
+        }
+        else
+        {
+            print("case ");
+            visitTree(jcCase.getExpression());
+        }
         print(":");
 
         ++indentLevel;
-        jcCase.getStatements();
+        for (JCTree.JCStatement statement : jcCase.getStatements())
+        {
+            print("\n");
+            visitTree(statement);
+        }
         --indentLevel;
     }
 
@@ -108,7 +139,12 @@ public class Visitor extends JCTree.Visitor
         print("\n\n");
         visitModifiers(jcClassDecl.getModifiers());
         print("class "+jcClassDecl.getSimpleName());
-        visitTree(jcClassDecl.getExtendsClause());
+
+        if (jcClassDecl.getExtendsClause() != null)
+        {
+            print(" extends ");
+            visitTree(jcClassDecl.getExtendsClause());
+        }
 
         // TODO: generics
         List<JCTree.JCExpression> interfaces = jcClassDecl.getImplementsClause();
@@ -202,8 +238,11 @@ public class Visitor extends JCTree.Visitor
 
         visitTree(jcIf.getThenStatement());
 
-        print("\nelse ");
-        visitTree(jcIf.getElseStatement());
+        if (jcIf.getElseStatement() != null)
+        {
+            print("\nelse ");
+            visitTree(jcIf.getElseStatement());
+        }
     }
 
     @Override
@@ -279,7 +318,7 @@ public class Visitor extends JCTree.Visitor
     public void visitNewClass(JCTree.JCNewClass jcNewClass)
     {
         print("new "+jcNewClass.getIdentifier()+"(");
-        List<JCTree.JCExpression> arguments = jcNewClass.getTypeArguments();
+        List<JCTree.JCExpression> arguments = jcNewClass.getArguments();
         if (arguments.size() > 0)
         {
             visitTree(arguments.get(0));
@@ -362,9 +401,9 @@ public class Visitor extends JCTree.Visitor
     @Override
     public void visitSwitch(JCTree.JCSwitch jcSwitch)
     {
-        print("switch (");
-        jcSwitch.getExpression();
-        print(")\n{");
+        print("switch ");
+        visitTree(jcSwitch.getExpression());
+        print("\n{");
         ++indentLevel;
 
         for (JCTree.JCCase jcCase : jcSwitch.getCases())
@@ -388,7 +427,7 @@ public class Visitor extends JCTree.Visitor
     public void visitTopLevel(JCTree.JCCompilationUnit compilationUnit)
     {
         // TODO: package annotations
-        print("package "+compilationUnit.getPackageName()+";\n\n");
+        print("package " + compilationUnit.getPackageName() + ";\n");
         for (JCTree.JCImport jcImport : compilationUnit.getImports())
         {
             visitImport(jcImport);
@@ -408,8 +447,10 @@ public class Visitor extends JCTree.Visitor
             case ASSIGNMENT: this.visitAssign((JCTree.JCAssign) jcTree); break;
             case ARRAY_TYPE: this.visitTypeArray((JCTree.JCArrayTypeTree) jcTree); break;
             case BLOCK: this.visitBlock((JCTree.JCBlock) jcTree); break;
+            case BREAK: this.visitBreak((JCTree.JCBreak) jcTree); break;
             case CLASS: this.visitClassDef((JCTree.JCClassDecl) jcTree); break;
             case ENHANCED_FOR_LOOP: this.visitForeachLoop((JCTree.JCEnhancedForLoop) jcTree); break;
+            case EMPTY_STATEMENT: break;
             case EXPRESSION_STATEMENT: this.visitExec((JCTree.JCExpressionStatement) jcTree); break;
             case FOR_LOOP: this.visitForLoop((JCTree.JCForLoop) jcTree); break;
             case IDENTIFIER: this.visitIdent((JCTree.JCIdent) jcTree); break;
@@ -422,7 +463,7 @@ public class Visitor extends JCTree.Visitor
             case NEW_CLASS: this.visitNewClass((JCTree.JCNewClass) jcTree); break;
             case PARAMETERIZED_TYPE: this.visitTypeApply((JCTree.JCTypeApply) jcTree); break;
             case PARENTHESIZED: this.visitParens((JCTree.JCParens) jcTree); break;
-            case PRIMITIVE_TYPE: print(jcTree.toString()); break;
+            case PRIMITIVE_TYPE: this.visitTypeIdent((JCTree.JCPrimitiveTypeTree) jcTree); break;
             case RETURN: this.visitReturn((JCTree.JCReturn) jcTree); break;
             case SWITCH: this.visitSwitch((JCTree.JCSwitch) jcTree); break;
             case THROW: this.visitThrow((JCTree.JCThrow) jcTree); break;
@@ -481,8 +522,6 @@ public class Visitor extends JCTree.Visitor
 //                    case ANNOTATION:
 //                        break;
 //                    case ARRAY_ACCESS:
-//                        break;
-//                    case ARRAY_TYPE:
 //                        break;
 //                    case ASSERT:
 //                        break;
@@ -597,6 +636,12 @@ public class Visitor extends JCTree.Visitor
     }
 
     @Override
+    public void visitTypeIdent(JCTree.JCPrimitiveTypeTree jcPrimitiveTypeTree)
+    {
+        print(jcPrimitiveTypeTree.getPrimitiveTypeKind());
+    }
+
+    @Override
     public void visitTypeTest(JCTree.JCInstanceOf jcInstanceOf)
     {
         visitTree(jcInstanceOf.getExpression());
@@ -627,4 +672,4 @@ public class Visitor extends JCTree.Visitor
         }
     }
 
-};
+}

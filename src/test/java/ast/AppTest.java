@@ -1,12 +1,9 @@
 package ast;
 
-import com.google.common.base.Throwables;
 import com.google.common.io.Files;
 
-import com.sun.source.tree.Tree;
 import com.sun.tools.javac.parser.*;
 import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.TreeScanner;
 import com.sun.tools.javac.util.Context;
 
 
@@ -22,11 +19,9 @@ import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
 
-import javax.lang.model.element.Modifier;
 import javax.tools.*;
 import java.io.*;
 import java.nio.charset.Charset;
-import java.util.List;
 
 /**
  * Unit test for simple App.
@@ -35,6 +30,8 @@ public class AppTest
     extends TestCase
 {
     static final String thisFilename = System.getProperty("user.dir") + "/src/test/java/ast/AppTest.java";
+    static final String thatFilename = System.getProperty("user.dir") + "/src/main/java/ast/Processor.java";
+    static final String otherFilename = System.getProperty("user.dir") + "/src/main/java/ast/PostOrderVisitor.java";
 
 
     /**
@@ -69,6 +66,13 @@ public class AppTest
     }
 
     public void testParser() throws IOException {
+//        visit(thisFilename);
+//        visit(thatFilename);
+        visit(otherFilename);
+    }
+
+    private void visit(String filename) throws IOException
+    {
         Context context = new Context();
 
         // http://docs.oracle.com/javase/7/docs/api/javax/tools/StandardJavaFileManager.html
@@ -79,15 +83,15 @@ public class AppTest
         Parser.Factory parserFactory = Parser.Factory.instance(context);
         Scanner.Factory scannerFactory = Scanner.Factory.instance(context);
 
-        String thisFileContents = Files.toString(new File(thisFilename), Charset.defaultCharset());
+        String thisFileContents = Files.toString(new File(filename), Charset.defaultCharset());
         Scanner scanner = scannerFactory.newScanner(thisFileContents);
         Parser parser = parserFactory.newParser(scanner, true, true);
         JCTree.JCCompilationUnit compilationUnit = parser.compilationUnit();
 
-        JCTree.Visitor visitor = new Visitor();
+        JCTree.Visitor visitor;
+//        visitor = new PostOrderVisitor();
+        visitor = new ProcessorTest.MinifiedProcessor();
         visitor.visitTopLevel(compilationUnit);
-
-        System.out.println("Done");
     }
 
     public void testJavaParse() throws IOException, ParseException {
