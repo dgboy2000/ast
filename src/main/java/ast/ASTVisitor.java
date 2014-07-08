@@ -1,6 +1,5 @@
 package ast;
 
-import com.google.common.collect.Lists;
 import com.sun.source.tree.Tree;
 import com.sun.tools.javac.parser.Parser;
 import com.sun.tools.javac.parser.Scanner;
@@ -20,7 +19,7 @@ import java.util.List;
  * Time: 2:28 PM
  * To change this template use File | Settings | File Templates.
  */
-public class PostOrderVisitor extends JCTree.Visitor
+public class ASTVisitor extends JCTree.Visitor
 {
 
     public static String minify(String javaCode)
@@ -39,7 +38,7 @@ public class PostOrderVisitor extends JCTree.Visitor
         Parser parser = parserFactory.newParser(scanner, true, true);
         JCTree.JCCompilationUnit compilationUnit = parser.compilationUnit();
 
-        PostOrderVisitor visitor = new PostOrderVisitor();
+        ASTVisitor visitor = new ASTVisitor();
         visitor.visitTopLevel(compilationUnit);
         return visitor.processor.toString();
     }
@@ -131,23 +130,33 @@ public class PostOrderVisitor extends JCTree.Visitor
     @Override
     public void visitApply(JCTree.JCMethodInvocation jcMethodInvocation)
     {
-        visitTree(jcMethodInvocation.getMethodSelect());
-        processor.processOpenParenthesis();
+        JCTree methodSelect = jcMethodInvocation.getMethodSelect();
+        if (methodSelect instanceof JCTree.JCFieldAccess)
+        {
+            JCTree.JCFieldAccess fieldAccess = (JCTree.JCFieldAccess) methodSelect;
+            visitSelect(fieldAccess, jcMethodInvocation.getTypeArguments());
+        }
+        else
+        {
+            visitTree(methodSelect);
+            if (jcMethodInvocation.getTypeArguments().size() > 0)
+                throw new IllegalArgumentException("Haven't implemented type arguments yet");
+        }
 
+        processor.processOpenParenthesis();
         List<JCTree.JCExpression> arguments = jcMethodInvocation.getArguments();
         if (arguments != null)
         {
             visitWithCommas(arguments);
         }
-
-        // TODO: type arguments
         processor.processCloseParenthesis();
     }
 
     @Override
     public void visitAssert(JCTree.JCAssert jcAssert)
     {
-        // TODO: detail
+        if (jcAssert.getDetail() != null) throw new IllegalArgumentException("detail not implemented yet");
+
         processor.processKeyword("assert");
         visitTree(jcAssert.getCondition());
     }
@@ -190,7 +199,6 @@ public class PostOrderVisitor extends JCTree.Visitor
     @Override
     public void visitBreak(JCTree.JCBreak jcBreak)
     {
-        // TODO: label
         if (jcBreak.getLabel() != null) throw new IllegalArgumentException("can't handle label");
         processor.processKeyword("break");
     }
@@ -290,8 +298,6 @@ public class PostOrderVisitor extends JCTree.Visitor
     public void visitContinue(JCTree.JCContinue jcContinue)
     {
         if (jcContinue.getLabel() != null) throw new IllegalArgumentException("Can't handle continue labels");
-        // TODO: labels
-
         processor.processKeyword("continue");
     }
 
@@ -412,6 +418,13 @@ public class PostOrderVisitor extends JCTree.Visitor
     {
         visitModifiers(jcMethodDecl.getModifiers());
 
+        if (jcMethodDecl.getTypeParameters().size() > 0)
+        {
+            processor.processSymbol("<");
+            visitWithCommas(jcMethodDecl.getTypeParameters());
+            processor.processSymbol(">");
+        }
+
         if (jcMethodDecl.getReturnType() != null)
         {
             visitTree(jcMethodDecl.getReturnType());
@@ -430,7 +443,11 @@ public class PostOrderVisitor extends JCTree.Visitor
             visitWithCommas(possibleExceptions);
         }
 
-        // TODO: type parameters, default value
+        if (jcMethodDecl.getDefaultValue() != null)
+        {
+            throw new IllegalArgumentException("Haven't implemented yet.");
+        }
+
         if (jcMethodDecl.getBody() != null)
         {
             visitBlock(jcMethodDecl.getBody());
@@ -555,9 +572,9 @@ public class PostOrderVisitor extends JCTree.Visitor
             case LEFT_SHIFT: processor.processSymbol("<<"); break;
             case RIGHT_SHIFT: processor.processSymbol(">>"); break;
             case UNSIGNED_RIGHT_SHIFT: processor.processSymbol(">>>"); break;
-//                    case LEFT_SHIFT_ASSIGNMENT: processor.processSymbol("+"); break;
-//                    case RIGHT_SHIFT_ASSIGNMENT: processor.processSymbol("+"); break;
-//                    case UNSIGNED_RIGHT_SHIFT_ASSIGNMENT: processor.processSymbol("+"); break;
+            case LEFT_SHIFT_ASSIGNMENT: processor.processSymbol("<<="); break;
+            case RIGHT_SHIFT_ASSIGNMENT: processor.processSymbol(">>="); break;
+            case UNSIGNED_RIGHT_SHIFT_ASSIGNMENT: processor.processSymbol(">>>="); break;
             case AND_ASSIGNMENT: processor.processSymbol("&="); break;
             case XOR_ASSIGNMENT: processor.processSymbol("^="); break;
             case OR_ASSIGNMENT: processor.processSymbol("|="); break;
@@ -586,8 +603,19 @@ public class PostOrderVisitor extends JCTree.Visitor
     @Override
     public void visitSelect(JCTree.JCFieldAccess jcFieldAccess)
     {
+        visitSelect(jcFieldAccess, new ArrayList<JCTree>());
+    }
+
+    private void visitSelect(JCTree.JCFieldAccess jcFieldAccess, List<? extends JCTree> typeArguments)
+    {
         visitTree(jcFieldAccess.selected);
         processor.processSymbol(".");
+        if (typeArguments.size() > 0)
+        {
+            processor.processSymbol("<");
+            visitWithCommas(typeArguments);
+            processor.processSymbol(">");
+        }
         processor.processName(jcFieldAccess.getIdentifier());
     }
 
@@ -632,7 +660,11 @@ public class PostOrderVisitor extends JCTree.Visitor
     @Override
     public void visitTopLevel(JCTree.JCCompilationUnit compilationUnit)
     {
-        // TODO: package annotations
+        for (JCTree.JCAnnotation annotation : compilationUnit.getPackageAnnotations())
+        {
+            visitAnnotation(annotation);
+        }
+
         processor.processKeyword("package");
         visitTree(compilationUnit.getPackageName());
         processor.processSymbol(";");
@@ -759,13 +791,7 @@ public class PostOrderVisitor extends JCTree.Visitor
 
             default:
                 throw new IllegalArgumentException("Unhandled kind " + jcTree.getKind().toString());
-//                    case ANNOTATION:
-//                        break;
-//                    case EXPRESSION_STATEMENT:
-//                        break;]
 //                    case LABELED_STATEMENT:
-//                        break;
-//                    case SYNCHRONIZED:
 //                        break;
 //                    case ERRONEOUS:
 //                        break;
@@ -831,9 +857,8 @@ public class PostOrderVisitor extends JCTree.Visitor
         List<JCTree.JCExpression> bounds = jcTypeParameter.getBounds();
         if (bounds != null && bounds.size() > 0)
         {
-            if (bounds.size() > 1) throw new IllegalArgumentException("can't handle multiple bounds");
             processor.processKeyword("extends");
-            visitTree(bounds.get(0));
+            visitWithSeparator(bounds, "&");
         }
     }
 
@@ -906,12 +931,16 @@ public class PostOrderVisitor extends JCTree.Visitor
         }
     }
 
-    private void visitWithCommas(List<? extends JCTree> jcTrees)
+    private void visitWithCommas(List<? extends JCTree> jcTrees) {
+        visitWithSeparator(jcTrees, ",");
+    }
+
+    private void visitWithSeparator(List<? extends JCTree> jcTrees, String separator)
     {
         boolean isFirst = true;
         for (JCTree jcTree : jcTrees)
         {
-            if (!isFirst) processor.processSymbol(",");
+            if (!isFirst) processor.processSymbol(separator);
             visitTree(jcTree);
             isFirst = false;
         }

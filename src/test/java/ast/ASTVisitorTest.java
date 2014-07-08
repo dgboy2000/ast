@@ -19,11 +19,13 @@ import java.util.List;
  * Time: 3:58 PM
  * To change this template use File | Settings | File Templates.
  */
-public class PostOrderVisitorTest extends TestCase
+public class ASTVisitorTest extends TestCase
 {
     public void testOnMetromileCode() throws IOException {
         String dirname = "/Users/dannygoodman/Sites/metromile/mms/";
-//        String dirname = "/Users/dannygoodman/Sites/metromile/mms/Services/src/main/java/com/metromile/parking/";
+
+        long originalSize = 0;
+        long compressedSize = 0;
         for (File file : FileListing.listFiles(dirname))
         {
             String filename = file.toString();
@@ -31,17 +33,30 @@ public class PostOrderVisitorTest extends TestCase
             {
                 String thisFileContents = Files.toString(file, Charset.defaultCharset());
                 System.out.println("Minified "+filename+":");
-                String minified = PostOrderVisitor.minify(thisFileContents);
+                String minified = ASTVisitor.minify(thisFileContents);
                 System.out.println(minified);
-                assertEquals(minified, PostOrderVisitor.minify(minified));
+                try
+                {
+                    assertEquals(minified, ASTVisitor.minify(minified));
+                }
+                catch (Exception e)
+                {
+                    System.out.println("FAILED on file: "+filename);
+                    continue;
+                }
+                originalSize += thisFileContents.length();
+                compressedSize += minified.length();
             }
         }
+
+        System.out.println("Total original characters: "+originalSize);
+        System.out.println("Total compressed characters: "+compressedSize);
     }
 
 
 
 
-
+    // Stolen from somewhere ... stack overflow?
     public static final class FileListing {
         public static List<File> listFiles(String directory) throws FileNotFoundException {
             File startingDirectory= new File(directory);
